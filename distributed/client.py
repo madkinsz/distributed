@@ -4858,21 +4858,27 @@ class performance_report:
     $ open myfile.html
     """
 
-    def __init__(self, filename="dask-report.html", stacklevel=1, mode=None):
+    def __init__(
+        self, filename="dask-report.html", stacklevel=1, mode=None, client=None
+    ):
         self.filename = filename
         # stacklevel 0 or less - shows dask internals which likely isn't helpful
         self._stacklevel = stacklevel if stacklevel > 0 else 1
         self.mode = mode
+        self.client = client
+
+    def get_client(self):
+        return self.client or get_client()
 
     async def __aenter__(self):
         self.start = time()
-        self.last_count = await get_client().run_on_scheduler(
+        self.last_count = await self.get_client().run_on_scheduler(
             lambda dask_scheduler: dask_scheduler.monitor.count
         )
-        await get_client().get_task_stream(start=0, stop=0)  # ensure plugin
+        await self.get_client().get_task_stream(start=0, stop=0)  # ensure plugin
 
     async def __aexit__(self, typ, value, traceback, code=None):
-        client = get_client()
+        client = self.get_client()
         if code is None:
             code = client._get_computation_code(self._stacklevel + 1)
         data = await client.scheduler.performance_report(
@@ -4882,10 +4888,10 @@ class performance_report:
             f.write(data)
 
     def __enter__(self):
-        get_client().sync(self.__aenter__)
+        self.get_client().sync(self.__aenter__)
 
     def __exit__(self, typ, value, traceback):
-        client = get_client()
+        client = self.get_client()
         code = client._get_computation_code(self._stacklevel + 1)
         client.sync(self.__aexit__, type, value, traceback, code=code)
 
